@@ -8,7 +8,7 @@ CREATE TABLE `userinfo` (
     `name` VARCHAR(64) NULL DEFAULT NULL,
     `email` VARCHAR(64) NULL DEFAULT NULL,
     `password` VARCHAR(64) NULL DEFAULT NULL,
-    `created` DATE NULL DEFAULT NULL,
+    `role` VARCHAR(64) NULL DEFAULT NULL,
     PRIMARY KEY (`uid`)
 );
 

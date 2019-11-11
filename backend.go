@@ -17,6 +17,7 @@ type UserData struct {
 	Username string `json:"username"`
 	Email    string `json:"email"`
 	Password string `json:"password"`
+	Role     string `json:"role"`
 }
 
 type UserDataList struct {
@@ -49,6 +50,11 @@ func login(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		return
 	}
 	log.Println(userData)
+	if len(userData.Username) <= 0 {
+		log.Println("Username must not empty")
+		respSend(w, "error")
+		return
+	}
 	rows, err := stmtLogin.Query(userData.Username)
 	if err != nil {
 		log.Println(err)
@@ -64,7 +70,7 @@ func login(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 			respSend(w, "error")
 			return
 		}
-		log.Println("user:", u, "password hash:", p)
+		log.Println("user:", u, "password hash:", p, "password from user:", userData.Password)
 		if reflect.DeepEqual(userData.Password, p) {
 			isSuccess = true
 		}
@@ -84,7 +90,18 @@ func register(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		return
 	}
 	log.Println(userData)
-	_, err = stmtRegister.Exec(userData.Username, userData.Name, userData.Email, userData.Password)
+	rows, err := stmtCheckRegister.Query(userData.Username)
+	if err != nil {
+		log.Println(err)
+		respSend(w, "error")
+		return
+	}
+	for rows.Next() {
+		log.Println("Username is exist!")
+		respSend(w, "error")
+		return
+	}
+	_, err = stmtRegister.Exec(userData.Username, userData.Name, userData.Email, userData.Password, userData.Role)
 	if err != nil {
 		log.Println(err)
 		respSend(w, "error")
@@ -104,8 +121,8 @@ func getUserList(w http.ResponseWriter, _ *http.Request, _ httprouter.Params) {
 	}
 	listTemp := make([]UserData, 0)
 	for rows.Next() {
-		var u, n, e, p string
-		err = rows.Scan(&u, &n, &e, &p)
+		var u, n, e, p, r string
+		err = rows.Scan(&u, &n, &e, &p, &r)
 		if err != nil {
 			log.Println(err)
 			listSend(w, userDataList)
@@ -116,6 +133,7 @@ func getUserList(w http.ResponseWriter, _ *http.Request, _ httprouter.Params) {
 			Username: u,
 			Email:    e,
 			Password: p,
+			Role:     r,
 		})
 	}
 	userDataList.Resp.ErrStr = "success"
@@ -127,6 +145,7 @@ var db *sql.DB
 var stmtRegister *sql.Stmt
 var stmtLogin *sql.Stmt
 var stmtGetList *sql.Stmt
+var stmtCheckRegister *sql.Stmt
 
 const UserDb = "root"
 const PwdDb = "yoga123"
@@ -139,7 +158,7 @@ func dbInit() {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	stmtRegister, err = db.Prepare("insert into `userinfo` values (null, ?, ?, ?, ?, null)")
+	stmtRegister, err = db.Prepare("insert into `userinfo` values (null, ?, ?, ?, ?, ?)")
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -147,7 +166,11 @@ func dbInit() {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	stmtGetList, err = db.Prepare("select username, name, email, password from userinfo")
+	stmtGetList, err = db.Prepare("select username, name, email, password, role from userinfo")
+	if err != nil {
+		log.Fatalln(err)
+	}
+	stmtCheckRegister, err = db.Prepare("select username from userinfo where username = ?")
 	if err != nil {
 		log.Fatalln(err)
 	}
