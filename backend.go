@@ -29,9 +29,10 @@ type ResponseData struct {
 	ErrStr string `json:"err_str"`
 }
 
-func respSend(w http.ResponseWriter, errStr string) {
-	resp := &ResponseData{}
-	resp.ErrStr = errStr
+func respSend(w http.ResponseWriter, errStr string, data UserData) {
+	resp := &UserDataList{}
+	resp.Resp.ErrStr = errStr
+	resp.UserList = append(resp.UserList, data)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
@@ -46,19 +47,19 @@ func login(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	err := json.NewDecoder(r.Body).Decode(userData)
 	if err != nil {
 		log.Println(err)
-		respSend(w, "error")
+		respSend(w, "Login error!", UserData{})
 		return
 	}
 	log.Println(userData)
 	if len(userData.Username) <= 0 {
 		log.Println("Username must not empty")
-		respSend(w, "error")
+		respSend(w, "Login error!", UserData{})
 		return
 	}
 	rows, err := stmtLogin.Query(userData.Username)
 	if err != nil {
 		log.Println(err)
-		respSend(w, "error")
+		respSend(w, "Login error!", UserData{})
 		return
 	}
 	isSuccess := false
@@ -67,7 +68,7 @@ func login(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		err = rows.Scan(&u, &p)
 		if err != nil {
 			log.Println(err)
-			respSend(w, "error")
+			respSend(w, "Login error!", UserData{})
 			return
 		}
 		log.Println("user:", u, "password hash:", p, "password from user:", userData.Password)
@@ -76,9 +77,16 @@ func login(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		}
 	}
 	if !isSuccess {
-		respSend(w, "error")
+		respSend(w, "Password or username is not match!", UserData{})
 	}
-	respSend(w, "success")
+	userDataResp := UserData{
+		Name:     userData.Name,
+		Username: userData.Username,
+		Email:    userData.Username,
+		Password: "",
+		Role:     userData.Role,
+	}
+	respSend(w, "success", userDataResp)
 }
 
 func register(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
@@ -86,28 +94,34 @@ func register(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	err := json.NewDecoder(r.Body).Decode(userData)
 	if err != nil {
 		log.Println(err)
-		respSend(w, "error")
+		respSend(w, "Registration error!", UserData{})
 		return
 	}
 	log.Println(userData)
 	rows, err := stmtCheckRegister.Query(userData.Username)
 	if err != nil {
 		log.Println(err)
-		respSend(w, "error")
+		respSend(w, "Registration error!", UserData{})
 		return
 	}
 	for rows.Next() {
-		log.Println("Username is exist!")
-		respSend(w, "error")
+		respSend(w, "Username is exist!", UserData{})
 		return
 	}
 	_, err = stmtRegister.Exec(userData.Username, userData.Name, userData.Email, userData.Password, userData.Role)
 	if err != nil {
 		log.Println(err)
-		respSend(w, "error")
+		respSend(w, "Registration error!", UserData{})
 		return
 	}
-	respSend(w, "success")
+	userDataResp := UserData{
+		Name:     userData.Name,
+		Username: userData.Username,
+		Email:    userData.Email,
+		Password: "",
+		Role:     userData.Role,
+	}
+	respSend(w, "success", userDataResp)
 }
 
 func getUserList(w http.ResponseWriter, _ *http.Request, _ httprouter.Params) {
