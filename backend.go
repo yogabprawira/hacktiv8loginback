@@ -50,7 +50,6 @@ func login(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		respSend(w, "Login error!", UserData{})
 		return
 	}
-	log.Println(userData)
 	if len(userData.Username) <= 0 {
 		log.Println("Username must not empty")
 		respSend(w, "Login error!", UserData{})
@@ -63,9 +62,9 @@ func login(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		return
 	}
 	isSuccess := false
+	var u, n, p, e, role string
 	for rows.Next() {
-		var u, p string
-		err = rows.Scan(&u, &p)
+		err = rows.Scan(&u, &n, &p, &e, &role)
 		if err != nil {
 			log.Println(err)
 			respSend(w, "Login error!", UserData{})
@@ -74,18 +73,20 @@ func login(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		log.Println("user:", u, "password hash:", p, "password from user:", userData.Password)
 		if reflect.DeepEqual(userData.Password, p) {
 			isSuccess = true
+			break
 		}
 	}
 	if !isSuccess {
 		respSend(w, "Password or username is not match!", UserData{})
 	}
 	userDataResp := UserData{
-		Name:     userData.Name,
-		Username: userData.Username,
-		Email:    userData.Username,
+		Name:     n,
+		Username: u,
+		Email:    e,
 		Password: "",
-		Role:     userData.Role,
+		Role:     role,
 	}
+	log.Println(userDataResp)
 	respSend(w, "success", userDataResp)
 }
 
@@ -97,7 +98,6 @@ func register(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		respSend(w, "Registration error!", UserData{})
 		return
 	}
-	log.Println(userData)
 	rows, err := stmtCheckRegister.Query(userData.Username)
 	if err != nil {
 		log.Println(err)
@@ -155,11 +155,64 @@ func getUserList(w http.ResponseWriter, _ *http.Request, _ httprouter.Params) {
 	listSend(w, userDataList)
 }
 
+func getUserDetail(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	usernameReq := ps.ByName("username")
+	rows, err := stmtUserDetail.Query(usernameReq)
+	if err != nil {
+		log.Println(err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	var userData UserData
+	for rows.Next() {
+		err = rows.Scan(&userData.Username, &userData.Name, &userData.Email, &userData.Role)
+		if err != nil {
+			log.Println(err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	log.Println(userData)
+	if len(userData.Username) <= 0 {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(&userData)
+}
+
+func editUser(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	var userData UserData
+	err := json.NewDecoder(r.Body).Decode(&userData)
+	if err != nil {
+		log.Println(err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if len(userData.Password) > 0 {
+		_, err = stmtEditUser.Exec(userData.Name, userData.Email, userData.Password, userData.Role, userData.Username)
+	} else {
+		_, err = stmtEditUserWithoutPass.Exec(userData.Name, userData.Email, userData.Role, userData.Username)
+	}
+	if err != nil {
+		log.Println(err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	var responseData ResponseData
+	responseData.ErrStr = "success"
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(&responseData)
+}
+
 var db *sql.DB
 var stmtRegister *sql.Stmt
 var stmtLogin *sql.Stmt
 var stmtGetList *sql.Stmt
 var stmtCheckRegister *sql.Stmt
+var stmtUserDetail *sql.Stmt
+var stmtEditUser *sql.Stmt
+var stmtEditUserWithoutPass *sql.Stmt
 
 const UserDb = "root"
 const PwdDb = "yoga123"
@@ -176,7 +229,7 @@ func dbInit() {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	stmtLogin, err = db.Prepare("select username, password from userinfo where username = ?")
+	stmtLogin, err = db.Prepare("select username, name, password, email, role from userinfo where username = ?")
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -188,6 +241,18 @@ func dbInit() {
 	if err != nil {
 		log.Fatalln(err)
 	}
+	stmtUserDetail, err = db.Prepare("select username, name, email, role from `userinfo` where username = ?;")
+	if err != nil {
+		log.Fatalln(err)
+	}
+	stmtEditUser, err = db.Prepare("update `userinfo` set name = ?, email = ?, password = ?, role = ? where username = ?;")
+	if err != nil {
+		log.Fatalln(err)
+	}
+	stmtEditUserWithoutPass, err = db.Prepare("update `userinfo` set name = ?, email = ?, role = ? where username = ?;")
+	if err != nil {
+		log.Fatalln(err)
+	}
 }
 
 func main() {
@@ -196,5 +261,7 @@ func main() {
 	router.POST("/list", getUserList)
 	router.POST("/login", login)
 	router.POST("/register", register)
+	router.GET("/user/:username", getUserDetail)
+	router.POST("/edit/:username", editUser)
 	log.Fatal(http.ListenAndServe(":9090", router))
 }
