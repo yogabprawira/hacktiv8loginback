@@ -70,7 +70,6 @@ func login(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 			respSend(w, "Login error!", UserData{})
 			return
 		}
-		log.Println("user:", u, "password hash:", p, "password from user:", userData.Password)
 		if reflect.DeepEqual(userData.Password, p) {
 			isSuccess = true
 			break
@@ -86,7 +85,6 @@ func login(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		Password: "",
 		Role:     role,
 	}
-	log.Println(userDataResp)
 	respSend(w, "success", userDataResp)
 }
 
@@ -172,7 +170,6 @@ func getUserDetail(w http.ResponseWriter, r *http.Request, ps httprouter.Params)
 			return
 		}
 	}
-	log.Println(userData)
 	if len(userData.Username) <= 0 {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
@@ -205,6 +202,20 @@ func editUser(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	_ = json.NewEncoder(w).Encode(&responseData)
 }
 
+func removeUser(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	usernameReq := ps.ByName("username")
+	_, err := stmtRemoveUser.Exec(usernameReq)
+	if err != nil {
+		log.Println(err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	var responseData ResponseData
+	responseData.ErrStr = "success"
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(&responseData)
+}
+
 var db *sql.DB
 var stmtRegister *sql.Stmt
 var stmtLogin *sql.Stmt
@@ -213,6 +224,7 @@ var stmtCheckRegister *sql.Stmt
 var stmtUserDetail *sql.Stmt
 var stmtEditUser *sql.Stmt
 var stmtEditUserWithoutPass *sql.Stmt
+var stmtRemoveUser *sql.Stmt
 
 const UserDb = "root"
 const PwdDb = "yoga123"
@@ -253,6 +265,10 @@ func dbInit() {
 	if err != nil {
 		log.Fatalln(err)
 	}
+	stmtRemoveUser, err = db.Prepare("delete from `userinfo` where username = ?;")
+	if err != nil {
+		log.Fatalln(err)
+	}
 }
 
 func main() {
@@ -263,5 +279,6 @@ func main() {
 	router.POST("/register", register)
 	router.GET("/user/:username", getUserDetail)
 	router.POST("/edit/:username", editUser)
+	router.GET("/remove/:username", removeUser)
 	log.Fatal(http.ListenAndServe(":9090", router))
 }
